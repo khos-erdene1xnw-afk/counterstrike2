@@ -1,0 +1,461 @@
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  USER
+  MODERATOR
+  ADMIN
+}
+
+enum Currency {
+  MNT
+  USD
+}
+
+enum ListingStatus {
+  PENDING
+  ACTIVE
+  SOLD
+  EXPIRED
+  CANCELLED
+}
+
+enum TradeOfferStatus {
+  CREATED
+  SENT
+  CONFIRMATION_NEEDED
+  IN_ESCROW
+  ACCEPTED
+  DECLINED
+  CANCELLED
+  EXPIRED
+  DISPUTED
+}
+
+enum TransactionType {
+  DEPOSIT
+  WITHDRAW
+  BUY_PAYMENT
+  SELL_REVENUE
+  COMMISSION_FEE
+  REFUND
+}
+
+enum TransactionStatus {
+  PENDING
+  COMPLETED
+  FAILED
+}
+
+enum InvoiceStatus {
+  PENDING
+  PAID
+  EXPIRED
+  CANCELLED
+  REFUNDED
+}
+
+enum WithdrawStatus {
+  REQUESTED
+  APPROVED
+  PROCESSING
+  COMPLETED
+  REJECTED
+}
+
+enum TicketStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+
+enum DisputeStatus {
+  OPEN
+  INVESTIGATING
+  RESOLVED_BUYER
+  RESOLVED_SELLER
+  CLOSED
+}
+
+model User {
+  id                 String          @id @default(uuid()) @db.Uuid
+  email              String?         @unique
+  username           String?
+  steamId            String          @unique @map("steam_id")
+  steamName          String          @map("steam_name")
+  steamAvatar        String          @map("steam_avatar")
+  tradeUrl           String?         @map("trade_url")
+  apiKey             String?         @map("api_key")
+  level              Int             @default(1)
+  xp                 Int             @default(0)
+  role               Role            @default(USER)
+  isVerified         Boolean         @default(false) @map("is_verified")
+  isBanned           Boolean         @default(false) @map("is_banned")
+  currencyPreference Currency        @default(MNT) @map("currency_preference")
+  ratingAvg          Decimal         @default(0) @map("rating_avg") @db.Decimal(3, 2)
+  ratingCount        Int             @default(0) @map("rating_count")
+  createdAt          DateTime        @default(now()) @map("created_at")
+  updatedAt          DateTime        @updatedAt @map("updated_at")
+
+  wallet             Wallet?
+  listings           Listing[]       @relation("UserListings")
+  buyerTrades        TradeOffer[]    @relation("BuyerTrades")
+  sellerTrades       TradeOffer[]    @relation("SellerTrades")
+  wishlists          Wishlist[]
+  recentlyViewed     RecentlyViewed[]
+  notifications      Notification[]
+  auditLogs          AuditLog[]
+  supportTickets     SupportTicket[]
+  ticketMessages     TicketMessage[]
+  paymentInvoices    PaymentInvoice[]
+  withdrawals        Withdrawal[]
+  ratingsGiven       SellerRating[]  @relation("RatingsGiven")
+  ratingsReceived    SellerRating[]  @relation("RatingsReceived")
+  reportsFiled       Report[]        @relation("ReportsFiled")
+  bans               Ban[]
+
+  @@index([role])
+  @@index([isBanned])
+  @@map("users")
+}
+
+model Wallet {
+  id          String   @id @default(uuid()) @db.Uuid
+  userId      String   @unique @map("user_id") @db.Uuid
+  balanceMNT  Decimal  @default(0.00) @map("balance_mnt") @db.Decimal(18, 2)
+  balanceUSD  Decimal  @default(0.00) @map("balance_usd") @db.Decimal(18, 2)
+  lockedMNT   Decimal  @default(0.00) @map("locked_mnt") @db.Decimal(18, 2)
+  lockedUSD   Decimal  @default(0.00) @map("locked_usd") @db.Decimal(18, 2)
+  pendingMNT  Decimal  @default(0.00) @map("pending_mnt") @db.Decimal(18, 2)
+  version     Int      @default(0) // optimistic concurrency control
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions Transaction[]
+
+  @@map("wallets")
+}
+
+model Skin {
+  id           String    @id @default(uuid()) @db.Uuid
+  name         String    @unique
+  marketHash   String    @unique @map("market_hash_name")
+  type         String
+  weapon       String
+  exterior     String
+  rarity       String
+  collection   String?
+  isStatTrak   Boolean   @default(false) @map("is_stattrak")
+  isSouvenir   Boolean   @default(false) @map("is_souvenir")
+  imageUrl     String    @map("image_url")
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  listings     Listing[]
+  wishlists    Wishlist[]
+  recentlyViewed RecentlyViewed[]
+
+  @@index([type])
+  @@index([weapon])
+  @@index([rarity])
+  @@index([exterior])
+  @@map("skins")
+}
+
+model Listing {
+  id            String        @id @default(uuid()) @db.Uuid
+  sellerId      String        @map("seller_id") @db.Uuid
+  skinId        String        @map("skin_id") @db.Uuid
+  assetId       String        @map("asset_id")
+  inspectLink   String?       @map("inspect_link")
+  floatValue    Decimal?      @map("float_value") @db.Decimal(12, 10)
+  paintSeed     Int?          @map("paint_seed")
+  paintIndex    Int?          @map("paint_index")
+  priceMNT      Decimal       @map("price_mnt") @db.Decimal(18, 2)
+  priceUSD      Decimal       @map("price_usd") @db.Decimal(18, 2)
+  commissionMNT Decimal       @map("commission_mnt") @db.Decimal(18, 2)
+  commissionUSD Decimal       @map("commission_usd") @db.Decimal(18, 2)
+  status        ListingStatus @default(ACTIVE)
+  viewCount     Int           @default(0) @map("view_count")
+  createdAt     DateTime      @default(now()) @map("created_at")
+  updatedAt     DateTime      @updatedAt @map("updated_at")
+
+  seller        User          @relation("UserListings", fields: [sellerId], references: [id], onDelete: Cascade)
+  skin          Skin          @relation(fields: [skinId], references: [id], onDelete: Cascade)
+  tradeOffers   TradeOffer[]
+
+  @@unique([sellerId, assetId, status])
+  @@index([status, createdAt])
+  @@index([status, priceMNT])
+  @@index([skinId, status])
+  @@index([sellerId])
+  @@map("listings")
+}
+
+model TradeOffer {
+  id            String           @id @default(uuid()) @db.Uuid
+  listingId     String           @map("listing_id") @db.Uuid
+  buyerId       String           @map("buyer_id") @db.Uuid
+  sellerId      String           @map("seller_id") @db.Uuid
+  steamOfferId  String?          @unique @map("steam_offer_id")
+  status        TradeOfferStatus @default(CREATED)
+  securityCode  String           @map("security_code")
+  escrowDays    Int              @default(0) @map("escrow_days")
+  lastSyncedAt  DateTime?        @map("last_synced_at")
+  expiresAt     DateTime?        @map("expires_at")
+  createdAt     DateTime         @default(now()) @map("created_at")
+  updatedAt     DateTime         @updatedAt @map("updated_at")
+
+  listing       Listing          @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  buyer         User             @relation("BuyerTrades", fields: [buyerId], references: [id], onDelete: Cascade)
+  seller        User             @relation("SellerTrades", fields: [sellerId], references: [id], onDelete: Cascade)
+  dispute       Dispute?
+
+  @@index([status, lastSyncedAt])
+  @@index([buyerId])
+  @@index([sellerId])
+  @@index([listingId])
+  @@map("trade_offers")
+}
+
+model Transaction {
+  id              String            @id @default(uuid()) @db.Uuid
+  walletId        String            @map("wallet_id") @db.Uuid
+  amountMNT       Decimal           @map("amount_mnt") @db.Decimal(18, 2)
+  amountUSD       Decimal           @map("amount_usd") @db.Decimal(18, 2)
+  currency        Currency
+  type            TransactionType
+  status          TransactionStatus @default(PENDING)
+  paymentProvider String?           @map("payment_provider")
+  referenceId     String?           @map("reference_id")
+  idempotencyKey  String?           @unique @map("idempotency_key")
+  createdAt       DateTime          @default(now()) @map("created_at")
+
+  wallet          Wallet            @relation(fields: [walletId], references: [id], onDelete: Cascade)
+
+  @@index([walletId, createdAt])
+  @@index([type, status])
+  @@index([referenceId])
+  @@map("transactions")
+}
+
+model PaymentInvoice {
+  id              String        @id @default(uuid()) @db.Uuid
+  userId          String        @map("user_id") @db.Uuid
+  qpayInvoiceId   String?       @unique @map("qpay_invoice_id")
+  senderInvoiceNo String        @unique @map("sender_invoice_no")
+  amountMNT       Decimal       @map("amount_mnt") @db.Decimal(18, 2)
+  status          InvoiceStatus @default(PENDING)
+  qrText          String?       @map("qr_text")
+  qrImage         String?       @map("qr_image") @db.Text
+  paidAmount      Decimal       @default(0) @map("paid_amount") @db.Decimal(18, 2)
+  qpayPaymentId   String?       @map("qpay_payment_id")
+  expiresAt       DateTime      @map("expires_at")
+  paidAt          DateTime?     @map("paid_at")
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
+
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([status, expiresAt])
+  @@map("payment_invoices")
+}
+
+model Withdrawal {
+  id           String         @id @default(uuid()) @db.Uuid
+  userId       String         @map("user_id") @db.Uuid
+  amountMNT    Decimal        @map("amount_mnt") @db.Decimal(18, 2)
+  bankName     String         @map("bank_name")
+  bankAccount  String         @map("bank_account")
+  accountName  String         @map("account_name")
+  status       WithdrawStatus @default(REQUESTED)
+  reviewedBy   String?        @map("reviewed_by") @db.Uuid
+  rejectReason  String?        @map("reject_reason")
+  providerRef   String?        @map("provider_ref")   // bank-side transaction reference
+  processedAt   DateTime?      @map("processed_at")   // auto-payout success timestamp
+  failureReason String?        @map("failure_reason") // auto-payout error detail
+  createdAt     DateTime       @default(now()) @map("created_at")
+  updatedAt     DateTime       @updatedAt @map("updated_at")
+
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([status, createdAt])
+  @@map("withdrawals")
+}
+
+model SellerRating {
+  id         String   @id @default(uuid()) @db.Uuid
+  raterId    String   @map("rater_id") @db.Uuid
+  sellerId   String   @map("seller_id") @db.Uuid
+  score      Int      // 1..5
+  comment    String?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  rater      User     @relation("RatingsGiven", fields: [raterId], references: [id], onDelete: Cascade)
+  seller     User     @relation("RatingsReceived", fields: [sellerId], references: [id], onDelete: Cascade)
+
+  @@unique([raterId, sellerId])
+  @@index([sellerId])
+  @@map("seller_ratings")
+}
+
+model RecentlyViewed {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  skinId    String   @map("skin_id") @db.Uuid
+  viewedAt  DateTime @default(now()) @map("viewed_at")
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  skin      Skin     @relation(fields: [skinId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, skinId])
+  @@index([userId, viewedAt])
+  @@map("recently_viewed")
+}
+
+model Wishlist {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  skinId    String   @map("skin_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  skin      Skin     @relation(fields: [skinId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, skinId])
+  @@index([userId])
+  @@map("wishlists")
+}
+
+model Notification {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  title     String
+  message   String
+  isRead    Boolean  @default(false) @map("is_read")
+  type      String
+  link      String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead])
+  @@index([userId, createdAt])
+  @@map("notifications")
+}
+
+model ExchangeRate {
+  id             String   @id @default(uuid()) @db.Uuid
+  baseCurrency   String   @default("USD") @map("base_currency")
+  targetCurrency String   @default("MNT") @map("target_currency")
+  rate           Decimal  @db.Decimal(18, 4)
+  source         String   @default("AUTOMATIC")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  @@map("exchange_rates")
+}
+
+model Dispute {
+  id            String        @id @default(uuid()) @db.Uuid
+  tradeOfferId  String        @unique @map("trade_offer_id") @db.Uuid
+  openedById    String        @map("opened_by_id") @db.Uuid
+  reason        String
+  status        DisputeStatus @default(OPEN)
+  resolution    String?
+  createdAt     DateTime      @default(now()) @map("created_at")
+  updatedAt     DateTime      @updatedAt @map("updated_at")
+
+  tradeOffer    TradeOffer    @relation(fields: [tradeOfferId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@map("disputes")
+}
+
+model Report {
+  id          String   @id @default(uuid()) @db.Uuid
+  reporterId  String   @map("reporter_id") @db.Uuid
+  targetType  String   @map("target_type") // USER | LISTING
+  targetId    String   @map("target_id")
+  reason      String
+  status      String   @default("OPEN")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  reporter    User     @relation("ReportsFiled", fields: [reporterId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@index([targetType, targetId])
+  @@map("reports")
+}
+
+model Ban {
+  id         String   @id @default(uuid()) @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+  reason     String
+  bannedById String   @map("banned_by_id") @db.Uuid
+  expiresAt  DateTime? @map("expires_at")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("bans")
+}
+
+model AuditLog {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String?  @map("user_id") @db.Uuid
+  action    String
+  ipAddress String?  @map("ip_address")
+  userAgent String?  @map("user_agent")
+  details   Json?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([action, createdAt])
+  @@map("audit_logs")
+}
+
+model SupportTicket {
+  id        String         @id @default(uuid()) @db.Uuid
+  userId    String         @map("user_id") @db.Uuid
+  title     String
+  status    TicketStatus   @default(OPEN)
+  category  String
+  priority  String         @default("MEDIUM")
+  createdAt DateTime       @default(now()) @map("created_at")
+  updatedAt DateTime       @updatedAt @map("updated_at")
+
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages  TicketMessage[]
+
+  @@index([status])
+  @@index([userId])
+  @@map("support_tickets")
+}
+
+model TicketMessage {
+  id            String   @id @default(uuid()) @db.Uuid
+  ticketId      String   @map("ticket_id") @db.Uuid
+  senderId      String   @map("sender_id") @db.Uuid
+  message       String
+  attachmentUrl String?  @map("attachment_url")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  ticket        SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  sender        User          @relation(fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId])
+  @@map("ticket_messages")
+}
